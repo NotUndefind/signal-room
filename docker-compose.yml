@@ -1,0 +1,29 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+  backend:
+    build: ./apps/backend
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - redis
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./data:/data
+
+  frontend:
+    build: ./apps/frontend
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  redis_data:
