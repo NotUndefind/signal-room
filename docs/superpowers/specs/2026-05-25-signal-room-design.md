@@ -117,11 +117,13 @@ interface DeviceState {
 
 `null` = message à ignorer (heartbeat, topic non pertinent).
 
-Ajouter un device = créer `interpreters/mon-device.ts`. Le pipeline le découvre au démarrage.
+**Ajout d'une nouvelle source** : créer `interpreters/mon-device.ts` qui implémente `Interpreter` et l'enregistrer dans `interpreters/index.ts`. Le pipeline MQTT souscrit automatiquement aux topics déclarés. Le dashboard s'adapte dynamiquement : chaque source enregistrée obtient une carte et apparaît dans les filtres de l'historique sans modification du reste du code.
+
+Frigate, WLED et Tasmota sont les trois sources initiales. L'architecture n'est pas limitée à ces sources.
 
 ---
 
-## 5. Interpréteurs par source
+## 5. Interpréteurs initiaux
 
 ### Frigate
 
@@ -341,7 +343,10 @@ cd apps/frontend && npm run dev
 
 ## 9. Ce qui est hors scope (v1)
 
-- Automatisations / actions sur les devices
 - Authentification / accès multi-utilisateur
 - Alertes ou notifications push
 - Support multi-pièces
+
+## 10. Roadmap v2
+
+- **Automatisations** — la couche d'observation v1 devient la base de règles déclenchées par les events interprétés (ex: "si Frigate détecte une personne → ajuster WLED").
