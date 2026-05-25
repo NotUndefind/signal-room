@@ -16,6 +16,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
   let ws: WebSocket
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let reconnectDelay = 1000
+  let destroyed = false
 
   function connect() {
     ws = new WebSocket(options.url)
@@ -40,6 +41,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
 
     ws.onclose = () => {
       options.onConnectionChange(false)
+      if (destroyed) return
       reconnectTimer = setTimeout(() => {
         reconnectDelay = Math.min(reconnectDelay * 2, 30000)
         connect()
@@ -55,6 +57,7 @@ export function createWsClient(options: WsClientOptions): WsClient {
 
   return {
     disconnect() {
+      destroyed = true
       if (reconnectTimer) clearTimeout(reconnectTimer)
       ws.close()
     },
