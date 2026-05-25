@@ -1,11 +1,16 @@
 {
   "name": "signal-room",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev:backend": "npm run dev --workspace=apps/backend",
     "dev:frontend": "npm run dev --workspace=apps/frontend",
     "test:backend": "npm run test --workspace=apps/backend",
     "test:frontend": "npm run test --workspace=apps/frontend"
+  },
+  "dependencies": {
+    "@rolldown/binding-darwin-arm64": "^1.0.2"
   }
 }
