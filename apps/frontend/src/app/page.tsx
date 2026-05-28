@@ -26,6 +26,7 @@ export default function DashboardPage() {
     return () => client.disconnect()
   }, [setDevice, setDevices, setConnected])
 
+  const frigateSources = Object.values(devices).filter(d => d.source === 'frigate')
   const tasmotaSources = Object.values(devices).filter(d => d.source === 'tasmota')
 
   return (
@@ -47,7 +48,13 @@ export default function DashboardPage() {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <FrigateCard state={devices.frigate} />
+        {frigateSources.length > 0 ? (
+          frigateSources.map((d) => (
+            <FrigateCard key={String(d.state.camera ?? d.source)} state={d} />
+          ))
+        ) : (
+          <FrigateCard state={undefined} />
+        )}
         <WledCard state={devices.wled} />
         {tasmotaSources.length > 0 ? (
           tasmotaSources.map((d) => (

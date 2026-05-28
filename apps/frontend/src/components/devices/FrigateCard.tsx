@@ -9,9 +9,10 @@ interface FrigateCardProps {
 
 export function FrigateCard({ state }: FrigateCardProps) {
   const s = state?.state as { object?: string; zone?: string; confidence?: number; camera?: string; active?: boolean } | undefined
+  const title = s?.camera ? `Frigate — ${s.camera}` : 'Frigate'
 
   return (
-    <DeviceCard title="Frigate" state={state}>
+    <DeviceCard title={title} state={state}>
       {s && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
