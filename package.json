@@ -11,6 +11,9 @@
     "test:frontend": "npm run test --workspace=apps/frontend"
   },
   "dependencies": {
-    "@rolldown/binding-darwin-arm64": "^1.0.2"
+    "@fastify/cors": "^11.2.0"
+  },
+  "overrides": {
+    "esbuild": "0.28.0"
   }
 }
