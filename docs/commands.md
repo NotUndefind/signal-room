@@ -54,12 +54,12 @@ cd apps/frontend && npx tsc --noEmit
 
 ## Dépendances clés et versions
 
-| Package | Version | Note |
-|---|---|---|
-| Node.js | 22 | Requis |
-| Fastify | 5.x | v4 incompatible avec @fastify/websocket v10 |
-| Next.js | 15/16 | App Router, Tailwind v4 |
-| better-sqlite3 | 11.x | WAL mode |
-| ioredis | 5.x | |
-| mqtt.js | 5.x | Import nommé `{ connect }` |
-| Vitest | 2.x | `vitest.config.mts` côté frontend (ESM) |
+| Package        | Version | Note                                        |
+| -------------- | ------- | ------------------------------------------- |
+| Node.js        | 22      | Requis                                      |
+| Fastify        | 5.x     | v4 incompatible avec @fastify/websocket v10 |
+| Next.js        | 15/16   | App Router, Tailwind v4                     |
+| better-sqlite3 | 11.x    | WAL mode                                    |
+| ioredis        | 5.x     |                                             |
+| mqtt.js        | 5.x     | Import nommé `{ connect }`                  |
+| Vitest         | 2.x     | `vitest.config.mts` côté frontend (ESM)     |

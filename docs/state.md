@@ -1,6 +1,6 @@
 # Signal Room — État du projet
 
-**Dernière mise à jour :** 2026-05-25
+**Dernière mise à jour :** 2026-05-26 (fix Tasmota multi-relais + Frigate multi-caméra)
 **Branche :** Main
 
 ---
@@ -81,22 +81,21 @@
 
 ### Fonctionnel certain
 
-- [ ] **Connexion à un vrai broker MQTT** — jamais testé contre un vrai Frigate/WLED/Tasmota. Les interpréteurs sont testés avec des payloads synthétiques, pas avec du trafic réel. Il y aura probablement des ajustements de parsing.
+- [~] **Connexion à un vrai broker MQTT** — connexion établie avec le broker réel (192.168.1.101:1883, user `mqtt_nlp`). Topics réels découverts : `home/chambre/lumiere/stat/chambre/RESULT`, `home/chambre/lumiere/stat/chambre/POWER2`, `frigate/principale/status/detect`. **Fix appliqué** : le Tasmota de ce setup utilise un full_topic custom `home/chambre/lumiere/` (préfixe) et `stat` au lieu de `tele`. `tasmotaInterpreter` refactorisé en `createTasmotaInterpreter(prefix)` avec support du topic `stat/+/RESULT`. Variable `TASMOTA_TOPIC_PREFIX=home/chambre/lumiere/` ajoutée. Le backend souscrit désormais à `home/chambre/lumiere/stat/+/RESULT`, `home/chambre/lumiere/tele/+/STATE`, `home/chambre/lumiere/tele/+/SENSOR`. Frigate : seul le topic de status (`frigate/principale/status/detect`) a été observé — les events (`frigate/+/events`) s'attendent à un payload JSON `{type, after}` déclenché par une détection réelle. À tester lors d'un prochain mouvement détecté.
 - [ ] **Page `/history` : filtre par plage horaire** — les paramètres `from`/`to` existent côté API et SQLite mais l'UI n'expose pas de date picker. Actuellement seul le filtre source est disponible.
 - [ ] **Pas d'authentification** — l'app est entièrement ouverte. Acceptable en réseau local, à adresser si exposée.
 - [ ] **GET /api/devices non utilisé côté frontend** — la page dashboard reçoit l'état via WebSocket (snapshot + updates). La route REST `/api/devices` existe mais aucun composant ne l'appelle.
 
 ### Comportements connus imparfaits
 
-- **FRIGATE_DEBOUNCE_MS inutilisée** — la variable d'env est dans `.env.example` et chargée dans `config.frigate.debounceMs`, mais `frigateInterpreter` a son `debounceMs` hardcodé à 300. La config n'est pas câblée à l'interpréteur. Impact : impossible de changer le debounce sans modifier le code.
-- **Debounce Frigate multi-caméra** — toutes les caméras Frigate partagent la même clé de debounce (`'frigate'`). Sur un setup multi-caméra, un événement d'une caméra réinitialise le timer de l'autre. Impact nul sur mono-caméra (cas nominal).
+- **FRIGATE_DEBOUNCE_MS inutilisée** — chargée dans `config.frigate.debounceMs`, mais `frigateInterpreter` a son `debounceMs` hardcodé à 300. La config n'est pas câblée à l'interpréteur. Impact : impossible de changer le debounce sans modifier le code.
 - **Race condition WS snapshot/update** — le client est ajouté au broadcaster *avant* que le snapshot Redis soit envoyé. Un update MQTT arrivant dans cette fenêtre sera écrasé par le snapshot. Impact très faible en pratique (fenêtre <1ms sur loopback), non bloquant.
 - **`getAllDeviceStates` utilise KEYS** — sur un large dataset Redis, KEYS est bloquant. Négligeable pour le cas d'usage (3–10 devices max).
 
 ### Flou / à définir
 
 - [ ] **Notifications** — pas prévu dans la spec, mais naturel pour Frigate (détection de nuit, zone sensible). Push ? Son ? Badge navigateur ?
-- [ ] **Multi-instance Tasmota** — l'app supporte plusieurs devices Tasmota (détection par `device_id`), mais Redis stocke tout sous la clé `device:tasmota`. Si deux Tasmota envoient des messages, le second écrase le premier dans Redis. À corriger : utiliser `device:tasmota:<device_id>` comme clé.
+- [x] **Multi-instance Tasmota / Multi-caméra Frigate** — résolu. La clé unique par device est calculée dans `index.ts` : `source:camera` ou `source:device_id`. Redis stocke `device:tasmota:chambre`, `device:frigate:principale`, etc. Le frontend filtre par `source` pour afficher une card par device.
 - [ ] **Frigate stats globales** — le topic `frigate/stats` n'est pas interprété. FPS, latence caméra, charge CPU Frigate pourraient être affichés.
 - [ ] **Animations** — framer-motion est installé mais pas utilisé. Les cards pourraient s'animer lors des mises à jour.
 - [ ] **Mode historique avancé** — device_snapshots est peuplé mais jamais lu. Une vue "état de la chambre à T" utilisant les snapshots n'est pas implémentée.
