@@ -1,12 +1,13 @@
 import type { Interpreter, DeviceState } from './types'
 import { frigateInterpreter } from './frigate'
 import { wledInterpreter } from './wled'
-import { tasmotaInterpreter } from './tasmota'
+import { createTasmotaInterpreter } from './tasmota'
+import { config } from '../config'
 
 export const DEFAULT_INTERPRETERS: Interpreter[] = [
   frigateInterpreter,
   wledInterpreter,
-  tasmotaInterpreter,
+  createTasmotaInterpreter(config.tasmota.topicPrefix),
 ]
 
 export interface InterpreterRegistry {

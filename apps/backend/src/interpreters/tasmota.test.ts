@@ -63,6 +63,17 @@ describe('tasmotaInterpreter', () => {
     })
   })
 
+  it('STATE multi-relais : POWER2 prime sur POWER1', () => {
+    const payload = {
+      Time: '2024-01-01T12:00:00',
+      POWER1: 'OFF',
+      POWER2: 'ON',
+      Wifi: { RSSI: 60 },
+    }
+    const result = tasmotaInterpreter.parse('tele/prise_bureau/STATE', toBuffer(payload))
+    expect(result?.state.power).toBe(true)
+  })
+
   it('retourne null si le payload est invalide', () => {
     const result = tasmotaInterpreter.parse('tele/device/STATE', Buffer.from('bad json'))
     expect(result).toBeNull()

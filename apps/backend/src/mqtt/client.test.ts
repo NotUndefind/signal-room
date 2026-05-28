@@ -23,6 +23,28 @@ describe('createMqttClient', () => {
       onMessage,
     })
 
-    expect(mqtt.connect).toHaveBeenCalledWith('mqtt://localhost:1883')
+    expect(mqtt.connect).toHaveBeenCalledWith('mqtt://localhost:1883', {
+      username: undefined,
+      password: undefined,
+    })
+  })
+
+  it('transmet les identifiants mqtt quand ils sont fournis', async () => {
+    const mqtt = await import('mqtt')
+    const { createMqttClient } = await import('./client')
+
+    createMqttClient({
+      host: 'localhost',
+      port: 1883,
+      username: 'mqtt_nlp',
+      password: 'secret',
+      topics: ['frigate/+/events'],
+      onMessage: vi.fn(),
+    })
+
+    expect(mqtt.connect).toHaveBeenCalledWith('mqtt://localhost:1883', {
+      username: 'mqtt_nlp',
+      password: 'secret',
+    })
   })
 })

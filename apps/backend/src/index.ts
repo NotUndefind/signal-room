@@ -9,6 +9,7 @@ import { createRedisStore } from './store/redis'
 import { createDedupStore } from './pipeline/dedup'
 import { createDebounce } from './pipeline/debounce'
 import { createInterpreterRegistry, DEFAULT_INTERPRETERS } from './interpreters/index'
+import type { DeviceState } from './interpreters/types'
 import { createMqttClient } from './mqtt/client'
 import { createBroadcaster, registerWsRoutes } from './ws/server'
 import { registerDeviceRoutes } from './api/devices'
@@ -35,6 +36,11 @@ async function main() {
   const retentionJob = createRetentionJob(db, config.retention.days)
   retentionJob.start()
 
+  function deviceKey(state: DeviceState): string {
+    const sub = String(state.state.camera ?? state.state.device_id ?? '')
+    return sub ? `${state.source}:${sub}` : state.source
+  }
+
   const debounceMap = new Map<string, ReturnType<typeof createDebounce>>()
 
   function getDebounce(source: string): ReturnType<typeof createDebounce> | null {
@@ -48,17 +54,24 @@ async function main() {
 
   function processState(topic: string, payload: Buffer) {
     const state = registry.route(topic, payload)
-    if (!state) return
+    if (!state) {
+      console.log(`[Pipeline] Aucun interpréteur pour le topic: ${topic}`)
+      return
+    }
 
     const debounce = getDebounce(state.source)
 
     const handle = () => {
-      if (!dedupStore.hasChanged(state)) return
-      dedupStore.update(state)
+      const key = deviceKey(state)
+      if (!dedupStore.hasChanged(key, state)) {
+        console.log(`[Pipeline] Dedup — état inchangé pour: ${key}`)
+        return
+      }
+      dedupStore.update(key, state)
+      console.log(`[Pipeline] Broadcast — source: ${key} | event: ${state.event_type}`)
+      broadcaster.broadcast(key, state)
 
-      broadcaster.broadcast(state.source, state)
-
-      redisStore.setDeviceState(state.source, state).catch(console.error)
+      redisStore.setDeviceState(key, state).catch(console.error)
 
       setImmediate(() => {
         insertEvent(db, {
@@ -83,6 +96,8 @@ async function main() {
   createMqttClient({
     host: config.mqtt.host,
     port: config.mqtt.port,
+    username: config.mqtt.username,
+    password: config.mqtt.password,
     topics: registry.getAllTopics(),
     onMessage: processState,
   })
