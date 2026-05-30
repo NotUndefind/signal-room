@@ -8,7 +8,11 @@ import { createRetentionJob } from './db/retention'
 import { createRedisStore } from './store/redis'
 import { createDedupStore } from './pipeline/dedup'
 import { createDebounce } from './pipeline/debounce'
-import { createInterpreterRegistry, DEFAULT_INTERPRETERS } from './interpreters/index'
+import { createDynamicRegistry } from './interpreters/dynamic'
+import { seedDeviceRegistry } from './db/registry'
+import { upsertTopicSeen } from './db/topics'
+import { registerTopicsRoutes } from './api/topics-routes'
+import { registerRegistryRoutes } from './api/registry-routes'
 import type { DeviceState } from './interpreters/types'
 import { createMqttClient } from './mqtt/client'
 import { createBroadcaster, registerWsRoutes } from './ws/server'
@@ -20,9 +24,11 @@ async function main() {
   const db = createDb(config.db.path)
   applySchema(db)
 
+  seedDeviceRegistry(db, config.tasmota.topicPrefix)
+  const deviceRegistry = createDynamicRegistry(db, config)
+
   const redisStore = createRedisStore(config.redis.url)
   const dedupStore = createDedupStore()
-  const registry = createInterpreterRegistry(DEFAULT_INTERPRETERS)
   const broadcaster = createBroadcaster()
 
   const fastify = Fastify({ logger: true })
@@ -32,19 +38,21 @@ async function main() {
   registerWsRoutes(fastify, broadcaster, redisStore)
   registerDeviceRoutes(fastify, redisStore)
   registerHistoryRoutes(fastify, db)
+  registerTopicsRoutes(fastify, db)
+  registerRegistryRoutes(fastify, db, deviceRegistry)
 
   const retentionJob = createRetentionJob(db, config.retention.days)
   retentionJob.start()
 
   function deviceKey(state: DeviceState): string {
-    const sub = String(state.state.camera ?? state.state.device_id ?? '')
+    const sub = String(state.state.camera ?? state.state.device_id ?? state.state.topic ?? '')
     return sub ? `${state.source}:${sub}` : state.source
   }
 
   const debounceMap = new Map<string, ReturnType<typeof createDebounce>>()
 
   function getDebounce(source: string): ReturnType<typeof createDebounce> | null {
-    const ms = registry.getDebounceMs(source)
+    const ms = deviceRegistry.getDebounceMs(source)
     if (!ms) return null
     if (!debounceMap.has(source)) {
       debounceMap.set(source, createDebounce(ms))
@@ -53,11 +61,17 @@ async function main() {
   }
 
   function processState(topic: string, payload: Buffer) {
-    const state = registry.route(topic, payload)
-    if (!state) {
-      console.log(`[Pipeline] Aucun interpréteur pour le topic: ${topic}`)
-      return
-    }
+    const state = deviceRegistry.route(topic, payload)
+
+    setImmediate(() => {
+      try {
+        upsertTopicSeen(db, topic, state?.source ?? null)
+      } catch (e) {
+        console.error('[Catalogue] Upsert error:', e)
+      }
+    })
+
+    if (!state) return
 
     const debounce = getDebounce(state.source)
 
@@ -98,7 +112,7 @@ async function main() {
     port: config.mqtt.port,
     username: config.mqtt.username,
     password: config.mqtt.password,
-    topics: registry.getAllTopics(),
+    topics: ['#'],
     onMessage: processState,
   })
 
