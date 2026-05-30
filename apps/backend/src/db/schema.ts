@@ -24,5 +24,22 @@ export function applySchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_snapshots_source ON device_snapshots (source);
     CREATE INDEX IF NOT EXISTS idx_snapshots_created_at ON device_snapshots (created_at);
+
+    CREATE TABLE IF NOT EXISTS topics_seen (
+      topic         TEXT    PRIMARY KEY,
+      first_seen    INTEGER NOT NULL,
+      last_seen     INTEGER NOT NULL,
+      message_count INTEGER NOT NULL DEFAULT 1,
+      detected_type TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS device_registry (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      name             TEXT    NOT NULL,
+      topic_patterns   TEXT    NOT NULL,
+      interpreter_type TEXT    NOT NULL,
+      active           INTEGER NOT NULL DEFAULT 1,
+      created_at       INTEGER NOT NULL
+    );
   `)
 }
