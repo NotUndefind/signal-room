@@ -91,3 +91,46 @@ function compareNodes(a: TreeNode, b: TreeNode): number {
   if (a.isLeaf !== b.isLeaf) return a.isLeaf ? 1 : -1
   return a.segment.localeCompare(b.segment)
 }
+
+export interface FilterResult {
+  filtered: TreeNode[]
+  expandedPaths: Set<string>
+}
+
+export function filterTree(tree: TreeNode[], query: string): FilterResult {
+  if (query === '') {
+    return { filtered: tree, expandedPaths: new Set() }
+  }
+
+  const q = query.toLowerCase()
+  const expandedPaths = new Set<string>()
+
+  function visit(node: TreeNode): TreeNode | null {
+    if (node.isLeaf) {
+      return node.path.toLowerCase().includes(q) ? node : null
+    }
+
+    const keptChildren: TreeNode[] = []
+    for (const child of node.children) {
+      const kept = visit(child)
+      if (kept) keptChildren.push(kept)
+    }
+
+    if (keptChildren.length === 0) return null
+
+    expandedPaths.add(node.path)
+
+    return {
+      ...node,
+      children: keptChildren,
+    }
+  }
+
+  const filtered: TreeNode[] = []
+  for (const root of tree) {
+    const kept = visit(root)
+    if (kept) filtered.push(kept)
+  }
+
+  return { filtered, expandedPaths }
+}

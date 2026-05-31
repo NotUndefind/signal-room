@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildTopicsTree, type TreeNode } from './topics-tree'
+import { buildTopicsTree, filterTree, type TreeNode } from './topics-tree'
 import type { TopicSeen } from './registry-api'
 
 function topic(t: string, overrides: Partial<TopicSeen> = {}): TopicSeen {
@@ -141,3 +141,52 @@ function walkTo(tree: TreeNode[], segments: string[]): TreeNode {
   }
   return current
 }
+
+describe('filterTree', () => {
+  it('query vide → arbre identique, expandedPaths vide', () => {
+    const tree = buildTopicsTree([topic('frigate/chambre/state')], [])
+    const { filtered, expandedPaths } = filterTree(tree, '')
+    expect(filtered).toEqual(tree)
+    expect(expandedPaths.size).toBe(0)
+  })
+
+  it('query qui matche une feuille → branches non-matchantes coupées', () => {
+    const tree = buildTopicsTree(
+      [topic('frigate/chambre/state'), topic('home/lumiere/power')],
+      [],
+    )
+    const { filtered } = filterTree(tree, 'chambre')
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0].segment).toBe('frigate')
+    expect(filtered[0].children).toHaveLength(1)
+    expect(filtered[0].children[0].segment).toBe('chambre')
+  })
+
+  it('expandedPaths contient tous les ancêtres des feuilles matchantes', () => {
+    const tree = buildTopicsTree([topic('frigate/chambre/enabled/state')], [])
+    const { expandedPaths } = filterTree(tree, 'state')
+    expect(expandedPaths.has('frigate')).toBe(true)
+    expect(expandedPaths.has('frigate/chambre')).toBe(true)
+    expect(expandedPaths.has('frigate/chambre/enabled')).toBe(true)
+    expect(expandedPaths.has('frigate/chambre/enabled/state')).toBe(false)
+  })
+
+  it('match case-insensitive', () => {
+    const tree = buildTopicsTree([topic('frigate/chambre/state')], [])
+    const { filtered } = filterTree(tree, 'CHAM')
+    expect(filtered).toHaveLength(1)
+  })
+
+  it('query sans match → filtered vide', () => {
+    const tree = buildTopicsTree([topic('frigate/chambre/state')], [])
+    const { filtered, expandedPaths } = filterTree(tree, 'zzz')
+    expect(filtered).toEqual([])
+    expect(expandedPaths.size).toBe(0)
+  })
+
+  it('match sur le path complet, pas seulement le segment final', () => {
+    const tree = buildTopicsTree([topic('frigate/chambre/state')], [])
+    const { filtered } = filterTree(tree, 'frigate/cha')
+    expect(filtered).toHaveLength(1)
+  })
+})
