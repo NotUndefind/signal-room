@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { History, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusIndicator } from '@/components/StatusIndicator'
@@ -10,19 +9,16 @@ import { FrigateCard } from '@/components/devices/FrigateCard'
 import { WledCard } from '@/components/devices/WledCard'
 import { TasmotaCard } from '@/components/devices/TasmotaCard'
 import { GenericCard } from '@/components/devices/GenericCard'
-import { DiscoveredCard } from '@/components/devices/DiscoveredCard'
 import { useRoomStore } from '@/store/room'
 import { createWsClient } from '@/lib/ws'
-import { fetchRegistry, fetchTopicsSeen } from '@/lib/registry-api'
-import type { RegistryDevice, TopicSeen } from '@/lib/registry-api'
+import { fetchRegistry } from '@/lib/registry-api'
+import type { RegistryDevice } from '@/lib/registry-api'
 
 const WS_URL = process.env.NEXT_PUBLIC_BACKEND_WS_URL ?? 'ws://localhost:3001/ws'
 
 export default function DashboardPage() {
   const { devices, connected, setDevice, setDevices, setConnected } = useRoomStore()
   const [registry, setRegistry] = useState<RegistryDevice[]>([])
-  const [discoveredTopics, setDiscoveredTopics] = useState<TopicSeen[]>([])
-  const router = useRouter()
 
   useEffect(() => {
     const client = createWsClient({
@@ -36,11 +32,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchRegistry().then(setRegistry).catch(console.error)
-    fetchTopicsSeen(86400).then(setDiscoveredTopics).catch(console.error)
   }, [])
-
-  const registeredPatterns = new Set(registry.flatMap(d => d.topic_patterns))
-  const unregisteredTopics = discoveredTopics.filter(t => !registeredPatterns.has(t.topic))
 
   function renderDevice(device: RegistryDevice): React.ReactNode[] {
     if (device.interpreter_type === 'frigate') {
@@ -97,13 +89,6 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {registry.filter(d => d.active).flatMap(renderDevice)}
-        {unregisteredTopics.map(topic => (
-          <DiscoveredCard
-            key={topic.topic}
-            topic={topic}
-            onConfigure={(t) => router.push(`/devices?topic=${encodeURIComponent(t)}`)}
-          />
-        ))}
       </div>
     </main>
   )
