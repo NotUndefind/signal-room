@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3'
 import type { DeviceEntry, Unit, UnitInput, LayoutDescriptor } from '../interpreters/types'
+import { findPreset, applyPreset, extractVars } from '../interpreters/presets'
 
 interface DeviceRow {
   id: number
@@ -162,4 +163,64 @@ export function legacyRegistryRows(db: Database.Database): DeviceRow[] {
     LEFT JOIN device_units u ON u.device_id = r.id
     WHERE u.id IS NULL
   `).all() as DeviceRow[]
+}
+
+const INTERPRETER_TO_PRESET: Record<string, string> = {
+  frigate: 'frigate-camera',
+  wled: 'wled',
+  tasmota: 'tasmota-power',
+  raw: 'raw-passthrough',
+}
+
+function deriveVarsForMigration(
+  presetKey: string,
+  legacyPattern: string,
+  tasmotaPrefix: string,
+): Record<string, string> | null {
+  const preset = findPreset(presetKey)
+  if (!preset) return null
+  if (presetKey === 'raw-passthrough') return { topic: legacyPattern }
+  if (presetKey === 'tasmota-power') {
+    const refPattern = preset.units[0].topic_pattern.replace('{prefix}', tasmotaPrefix)
+    const vars = extractVars(refPattern, legacyPattern)
+    if (!vars) return null
+    return { prefix: tasmotaPrefix, device_id: vars.device_id ?? '+' }
+  }
+  return extractVars(preset.units[0].topic_pattern, legacyPattern)
+}
+
+export function migrateLegacyRegistry(db: Database.Database, tasmotaPrefix: string): void {
+  const rows = legacyRegistryRows(db)
+  for (const row of rows) {
+    const interpreterType = row.interpreter_type ?? ''
+    const presetKey = INTERPRETER_TO_PRESET[interpreterType]
+    if (!presetKey) {
+      console.warn(`[Migration] interpreter_type inconnu pour device ${row.id} (${row.name}): ${interpreterType}`)
+      updateDeviceMeta(db, row.id, { active: false })
+      continue
+    }
+    const preset = findPreset(presetKey)
+    if (!preset) {
+      console.warn(`[Migration] preset introuvable: ${presetKey}`)
+      updateDeviceMeta(db, row.id, { active: false })
+      continue
+    }
+    const patterns: string[] = row.topic_patterns ? JSON.parse(row.topic_patterns) : []
+    const firstPattern = patterns[0]
+    if (!firstPattern) {
+      console.warn(`[Migration] device ${row.id} (${row.name}) sans topic_patterns, désactivé`)
+      updateDeviceMeta(db, row.id, { active: false })
+      continue
+    }
+    const vars = deriveVarsForMigration(presetKey, firstPattern, tasmotaPrefix)
+    if (!vars) {
+      console.warn(`[Migration] impossible d'extraire les placeholders pour ${row.name} (${firstPattern}), device désactivé`)
+      updateDeviceMeta(db, row.id, { active: false })
+      continue
+    }
+    const units = applyPreset(preset, vars)
+    insertUnits(db, row.id, units, Date.now())
+    updateDeviceMeta(db, row.id, { debounce_ms: preset.debounce_ms })
+    console.log(`[Migration] device ${row.id} (${row.name}) migré vers preset ${presetKey}`)
+  }
 }

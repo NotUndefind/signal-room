@@ -5,6 +5,7 @@ import { applySchema } from './schema'
 import {
   getAllDevices, getDeviceById, insertDeviceWithUnits,
   deleteDevice, replaceDeviceUnits, updateDeviceMeta, legacyRegistryRows,
+  migrateLegacyRegistry,
 } from './registry'
 import type { UnitInput } from '../interpreters/types'
 
@@ -140,5 +141,89 @@ describe('legacyRegistryRows', () => {
     expect(legacy).toHaveLength(1)
     expect(legacy[0].name).toBe('LegacyFrigate')
     expect(legacy.some(r => r.id === id)).toBe(false)
+  })
+})
+
+function insertLegacyRow(db: Database.Database, name: string, patterns: string[], interpreterType: string): number {
+  const r = db.prepare(`
+    INSERT INTO device_registry (name, topic_patterns, interpreter_type, active, created_at)
+    VALUES (?, ?, ?, 1, ?)
+  `).run(name, JSON.stringify(patterns), interpreterType, Date.now())
+  return r.lastInsertRowid as number
+}
+
+describe('migrateLegacyRegistry', () => {
+  it('migre une row Frigate (frigate/principale/events)', () => {
+    const db = freshDb()
+    insertLegacyRow(db, 'Caméra entrée', ['frigate/principale/events'], 'frigate')
+    migrateLegacyRegistry(db, '')
+    const all = getAllDevices(db)
+    expect(all).toHaveLength(1)
+    expect(all[0].name).toBe('Caméra entrée')
+    expect(all[0].debounce_ms).toBe(300)
+    expect(all[0].units.every(u => u.topic_pattern === 'frigate/principale/events')).toBe(true)
+    expect(all[0].units.find(u => u.output_field === 'object')).toBeDefined()
+  })
+
+  it('migre une row WLED (wled/salon/v)', () => {
+    const db = freshDb()
+    insertLegacyRow(db, 'WLED salon', ['wled/salon/v'], 'wled')
+    migrateLegacyRegistry(db, '')
+    const all = getAllDevices(db)
+    expect(all[0].units.every(u => u.topic_pattern === 'wled/salon/v')).toBe(true)
+    expect(all[0].units.find(u => u.output_field === 'brightness')).toBeDefined()
+  })
+
+  it('migre une row Tasmota avec prefix vide', () => {
+    const db = freshDb()
+    insertLegacyRow(db, 'Lampe chambre', ['tele/chambre/STATE'], 'tasmota')
+    migrateLegacyRegistry(db, '')
+    const d = getAllDevices(db)[0]
+    expect(d.units.every(u => u.topic_pattern === 'tele/chambre/STATE')).toBe(true)
+  })
+
+  it('migre une row Tasmota avec prefix custom', () => {
+    const db = freshDb()
+    insertLegacyRow(db, 'Tasmota', ['home/chambre/lumiere/tele/chambre/STATE'], 'tasmota')
+    migrateLegacyRegistry(db, 'home/chambre/lumiere/')
+    const d = getAllDevices(db)[0]
+    expect(d.units[0].topic_pattern).toBe('home/chambre/lumiere/tele/chambre/STATE')
+  })
+
+  it('migre une row raw avec un topic exact', () => {
+    const db = freshDb()
+    insertLegacyRow(db, 'Sonde', ['home/garage/temp'], 'raw')
+    migrateLegacyRegistry(db, '')
+    const d = getAllDevices(db)[0]
+    expect(d.units[0].topic_pattern).toBe('home/garage/temp')
+    expect(d.units[0].output_field).toBe('payload')
+  })
+
+  it('idempotente : second appel ne change rien', () => {
+    const db = freshDb()
+    insertLegacyRow(db, 'Frigate', ['frigate/principale/events'], 'frigate')
+    migrateLegacyRegistry(db, '')
+    const before = getAllDevices(db)
+    migrateLegacyRegistry(db, '')
+    const after = getAllDevices(db)
+    expect(after).toHaveLength(before.length)
+    expect(after[0].units.length).toBe(before[0].units.length)
+  })
+
+  it('ignore les rows déjà migrées (qui ont des units)', () => {
+    const db = freshDb()
+    insertDeviceWithUnits(db, { name: 'Already', debounce_ms: null, layout: null, units: [sampleUnit] })
+    migrateLegacyRegistry(db, '')
+    const d = getAllDevices(db)[0]
+    expect(d.name).toBe('Already')
+    expect(d.units).toHaveLength(1)
+  })
+
+  it('log warning et désactive si extraction du placeholder échoue', () => {
+    const db = freshDb()
+    insertLegacyRow(db, 'Cas exotique', ['custom/strange/topic'], 'frigate')
+    migrateLegacyRegistry(db, '')
+    const d = getAllDevices(db)[0]
+    expect(d.active).toBe(false)
   })
 })
