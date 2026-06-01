@@ -5,7 +5,10 @@ import Link from 'next/link'
 import { History, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusIndicator } from '@/components/StatusIndicator'
-import { GenericDeviceCard } from '@/components/devices/GenericDeviceCard'
+import { FrigateCard } from '@/components/devices/FrigateCard'
+import { WledCard } from '@/components/devices/WledCard'
+import { TasmotaCard } from '@/components/devices/TasmotaCard'
+import { GenericCard } from '@/components/devices/GenericCard'
 import { useRoomStore } from '@/store/room'
 import { createWsClient } from '@/lib/ws'
 import { fetchRegistry } from '@/lib/registry-api'
@@ -30,6 +33,35 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchRegistry().then(setRegistry).catch(console.error)
   }, [])
+
+  function renderDevice(device: RegistryDevice): React.ReactNode[] {
+    if (device.interpreter_type === 'frigate') {
+      const sources = Object.values(devices).filter(d => d.source === 'frigate')
+      if (sources.length === 0) return [<FrigateCard key={`frigate-${device.id}`} state={undefined} />]
+      return sources.map(d => (
+        <FrigateCard key={String(d.state.camera ?? device.id)} state={d} />
+      ))
+    }
+    if (device.interpreter_type === 'tasmota') {
+      const sources = Object.values(devices).filter(d => d.source === 'tasmota')
+      if (sources.length === 0) return [<TasmotaCard key={`tasmota-${device.id}`} state={undefined} />]
+      return sources.map(d => (
+        <TasmotaCard
+          key={d.state.device_id as string}
+          state={d}
+          label={`Tasmota — ${d.state.device_id as string}`}
+        />
+      ))
+    }
+    if (device.interpreter_type === 'wled') {
+      return [<WledCard key={`wled-${device.id}`} state={devices['wled']} />]
+    }
+    if (device.interpreter_type === 'raw') {
+      const topic = device.topic_patterns[0] ?? ''
+      return [<GenericCard key={`raw-${device.id}`} name={device.name} state={devices[`raw:${topic}`]} />]
+    }
+    return []
+  }
 
   return (
     <main className="min-h-screen bg-background p-6">
@@ -56,13 +88,7 @@ export default function DashboardPage() {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {registry.filter(d => d.active).map(device => (
-          <GenericDeviceCard
-            key={device.id}
-            device={device}
-            state={devices[`device:${device.id}`]}
-          />
-        ))}
+        {registry.filter(d => d.active).flatMap(renderDevice)}
       </div>
     </main>
   )
