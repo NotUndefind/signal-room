@@ -11,7 +11,7 @@ export function NumericValue({ value, display }: Props) {
   const min = display?.min ?? 0
   const max = display?.max ?? 100
   const hasRange = display?.min !== undefined && display?.max !== undefined
-  const pct = Math.min(100, Math.max(0, ((num - min) / (max - min)) * 100))
+  const pct = max === min ? 100 : Math.min(100, Math.max(0, ((num - min) / (max - min)) * 100))
 
   return (
     <div className="space-y-1">
