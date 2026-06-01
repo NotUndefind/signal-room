@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useRef, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Trash2 } from 'lucide-react'
+import { ArrowLeft, RotateCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { TopicsTree } from '@/components/devices/TopicsTree'
 import { fetchRegistry, fetchTopicsSeen, addDevice, removeDevice } from '@/lib/registry-api'
 import type { RegistryDevice, TopicSeen } from '@/lib/registry-api'
 
@@ -22,11 +23,34 @@ function DevicesContent() {
   const [topicPattern, setTopicPattern] = useState(prefillTopic)
   const [interpreterType, setInterpreterType] = useState<string>('raw')
   const [error, setError] = useState<string | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  const nameInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchRegistry().then(setRegistry).catch(console.error)
     fetchTopicsSeen().then(setTopicsSeen).catch(console.error)
   }, [])
+
+  const registeredPatterns = registry.flatMap(d => d.topic_patterns)
+
+  async function handleRefresh() {
+    setIsRefreshing(true)
+    try {
+      const [r, t] = await Promise.all([fetchRegistry(), fetchTopicsSeen()])
+      setRegistry(r)
+      setTopicsSeen(t)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
+  function handleSelectTopic(topic: string) {
+    setTopicPattern(topic)
+    nameInputRef.current?.focus()
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -69,8 +93,8 @@ function DevicesContent() {
         <h1 className="text-2xl font-bold tracking-tight">Gestion des devices</h1>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_1fr] gap-6">
+        <section className="space-y-4">
           <h2 className="text-lg font-semibold">Devices configurés ({registry.length})</h2>
           {registry.length === 0 && (
             <p className="text-sm text-muted-foreground">Aucun device configuré</p>
@@ -100,15 +124,36 @@ function DevicesContent() {
               </CardContent>
             </Card>
           ))}
-        </div>
+        </section>
 
-        <div className="space-y-4">
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Topics découverts</h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              aria-label="Rafraîchir"
+            >
+              <RotateCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+          <TopicsTree
+            topics={topicsSeen}
+            registeredPatterns={registeredPatterns}
+            onSelectTopic={handleSelectTopic}
+          />
+        </section>
+
+        <section className="space-y-4">
           <h2 className="text-lg font-semibold">Ajouter un device</h2>
           <form onSubmit={handleAdd} className="space-y-4">
             <div className="space-y-1">
               <label className="text-sm font-medium" htmlFor="device-name">Nom</label>
               <input
                 id="device-name"
+                ref={nameInputRef}
                 className="w-full border rounded px-3 py-2 text-sm bg-background"
                 value={name}
                 onChange={e => setName(e.target.value)}
@@ -123,13 +168,9 @@ function DevicesContent() {
                 value={topicPattern}
                 onChange={e => setTopicPattern(e.target.value)}
                 placeholder="home/sensor/temp"
-                list="topics-datalist"
               />
-              <datalist id="topics-datalist">
-                {topicsSeen.map(t => <option key={t.topic} value={t.topic} />)}
-              </datalist>
               <p className="text-xs text-muted-foreground">
-                Les topics vus apparaissent en suggestion. Wildcards MQTT supportés : + et #
+                Cliquez un topic dans l'arbre ou saisissez à la main. Wildcards MQTT supportés : + et #
               </p>
             </div>
             <div className="space-y-1">
@@ -146,7 +187,7 @@ function DevicesContent() {
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full">Ajouter</Button>
           </form>
-        </div>
+        </section>
       </div>
     </main>
   )
