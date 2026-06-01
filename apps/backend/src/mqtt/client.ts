@@ -4,17 +4,12 @@ import type { MqttClient } from 'mqtt'
 interface MqttClientOptions {
   host: string
   port: number
-  username?: string
-  password?: string
   topics: string[]
   onMessage: (topic: string, payload: Buffer) => void
 }
 
 export function createMqttClient(options: MqttClientOptions): MqttClient {
-  const client = connect(`mqtt://${options.host}:${options.port}`, {
-    username: options.username,
-    password: options.password,
-  })
+  const client = connect(`mqtt://${options.host}:${options.port}`)
 
   client.on('connect', () => {
     console.log(`[MQTT] Connected to ${options.host}:${options.port}`)
