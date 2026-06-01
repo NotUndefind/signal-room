@@ -132,10 +132,11 @@ describe('buildTopicsTree', () => {
 })
 
 function walkTo(tree: TreeNode[], segments: string[]): TreeNode {
-  let current = tree.find(n => n.segment === segments[0])
-  if (!current) throw new Error(`segment introuvable: ${segments[0]}`)
+  const first = tree.find(n => n.segment === segments[0])
+  if (!first) throw new Error(`segment introuvable: ${segments[0]}`)
+  let current: TreeNode = first
   for (let i = 1; i < segments.length; i++) {
-    const next = current.children.find(n => n.segment === segments[i])
+    const next: TreeNode | undefined = current.children.find(n => n.segment === segments[i])
     if (!next) throw new Error(`segment introuvable: ${segments[i]}`)
     current = next
   }
