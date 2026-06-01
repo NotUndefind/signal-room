@@ -6,13 +6,6 @@ export interface DeviceState {
   timestamp: number
 }
 
-export interface Interpreter {
-  source: string
-  topics: string[]
-  debounceMs?: number
-  parse(topic: string, payload: Buffer): DeviceState | null
-}
-
 export type OutputType = 'boolean' | 'number' | 'string' | 'color' | 'enum'
 
 export type ConditionOp = 'eq' | 'neq' | 'in' | 'contains' | 'gt' | 'gte' | 'lt' | 'lte'

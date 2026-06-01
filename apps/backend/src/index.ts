@@ -8,7 +8,7 @@ import { createRetentionJob } from './db/retention'
 import { createRedisStore } from './store/redis'
 import { createDedupStore } from './pipeline/dedup'
 import { createDebounce } from './pipeline/debounce'
-import { getAllDevices, migrateLegacyRegistry } from './db/registry'
+import { getAllDevices } from './db/registry'
 import { createUnitRegistry } from './interpreters/registry'
 import { createAggregator } from './interpreters/aggregator'
 import { upsertTopicSeen } from './db/topics'
@@ -24,7 +24,6 @@ import { insertEvent, insertSnapshot } from './db/queries'
 async function main() {
   const db = createDb(config.db.path)
   applySchema(db)
-  migrateLegacyRegistry(db, config.tasmota.topicPrefix)
 
   const devices = getAllDevices(db)
   const unitRegistry = createUnitRegistry(devices)

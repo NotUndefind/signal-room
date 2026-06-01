@@ -43,8 +43,8 @@ export function applySchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS device_registry (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
       name             TEXT    NOT NULL,
-      topic_patterns   TEXT    NOT NULL,
-      interpreter_type TEXT    NOT NULL,
+      debounce_ms      INTEGER,
+      layout_json      TEXT,
       active           INTEGER NOT NULL DEFAULT 1,
       created_at       INTEGER NOT NULL
     );
@@ -72,5 +72,22 @@ export function applySchema(db: Database.Database): void {
   }
   if (!hasColumn(db, 'device_registry', 'layout_json')) {
     db.exec(`ALTER TABLE device_registry ADD COLUMN layout_json TEXT`)
+  }
+
+  if (hasColumn(db, 'device_registry', 'topic_patterns')) {
+    db.exec(`
+      CREATE TABLE device_registry_new (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        name             TEXT    NOT NULL,
+        debounce_ms      INTEGER,
+        layout_json      TEXT,
+        active           INTEGER NOT NULL DEFAULT 1,
+        created_at       INTEGER NOT NULL
+      );
+      INSERT INTO device_registry_new (id, name, debounce_ms, layout_json, active, created_at)
+        SELECT id, name, debounce_ms, layout_json, active, created_at FROM device_registry;
+      DROP TABLE device_registry;
+      ALTER TABLE device_registry_new RENAME TO device_registry;
+    `)
   }
 }
