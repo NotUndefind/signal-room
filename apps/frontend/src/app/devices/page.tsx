@@ -356,7 +356,7 @@ function DevicesContent() {
 
 export default function DevicesPage() {
   return (
-    <Suspense>
+    <Suspense fallback={null}>
       <DevicesContent />
     </Suspense>
   )
