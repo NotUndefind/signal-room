@@ -63,6 +63,7 @@ export interface TopicSeen {
 
 export async function fetchRegistry(): Promise<RegistryDevice[]> {
   const res = await fetch(`${API_URL}/api/registry`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json() as { devices: RegistryDevice[] }
   return data.devices
 }
@@ -72,12 +73,14 @@ export async function fetchTopicsSeen(sinceSeconds?: number): Promise<TopicSeen[
     ? `${API_URL}/api/topics?since=${sinceSeconds}`
     : `${API_URL}/api/topics`
   const res = await fetch(url)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json() as { topics: TopicSeen[] }
   return data.topics
 }
 
 export async function fetchPresets(): Promise<Preset[]> {
   const res = await fetch(`${API_URL}/api/presets`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json() as { presets: Preset[] }
   return data.presets
 }
@@ -88,20 +91,23 @@ export async function addDevice(payload: DevicePayload): Promise<number> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json() as { id: number }
   return data.id
 }
 
 export async function patchDevice(id: number, payload: DevicePayload): Promise<void> {
-  await fetch(`${API_URL}/api/registry/${id}`, {
+  const res = await fetch(`${API_URL}/api/registry/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
 }
 
 export async function removeDevice(id: number): Promise<void> {
-  await fetch(`${API_URL}/api/registry/${id}`, { method: 'DELETE' })
+  const res = await fetch(`${API_URL}/api/registry/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
 }
 
 export function applyPresetClient(preset: Preset, vars: Record<string, string>): UnitInput[] {

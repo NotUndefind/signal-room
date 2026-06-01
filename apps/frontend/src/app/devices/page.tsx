@@ -81,8 +81,12 @@ function DevicesContent() {
   }
 
   async function handleRemove(id: number) {
-    await removeDevice(id)
-    setRegistry(prev => prev.filter(d => d.id !== id))
+    try {
+      await removeDevice(id)
+      setRegistry(prev => prev.filter(d => d.id !== id))
+    } catch {
+      setFormError('Erreur lors de la suppression')
+    }
   }
 
   function handlePresetNext() {
@@ -303,7 +307,7 @@ function DevicesContent() {
             <div className="space-y-4">
               <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                 {units.map((unit, index) => (
-                  <Card key={index}>
+                  <Card key={unit.output_field || index}>
                     <CardContent className="pt-3 space-y-2">
                       <div className="space-y-1">
                         <label className="text-xs font-medium text-muted-foreground">topic_pattern</label>

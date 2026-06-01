@@ -49,7 +49,7 @@ export function GenericDeviceCard({ device, state }: GenericDeviceCardProps) {
   const unitsByField = Object.fromEntries(device.units.map(u => [u.output_field, u]))
 
   function renderGroups() {
-    return device.layout!.groups!.map((group, i) => (
+    return (device.layout?.groups ?? []).map((group, i) => (
       <div key={i} className="space-y-2">
         {group.title && (
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{group.title}</p>
