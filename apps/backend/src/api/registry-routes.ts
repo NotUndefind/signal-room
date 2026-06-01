@@ -1,52 +1,58 @@
 import type { FastifyInstance } from 'fastify'
 import type Database from 'better-sqlite3'
-import type { DynamicRegistry } from '../interpreters/dynamic'
-import type { DeviceEntry } from '../db/registry'
-import { getAllDevices, insertDevice, deleteDevice } from '../db/registry'
-
-const VALID_TYPES = ['frigate', 'tasmota', 'wled', 'raw'] as const
+import type { UnitRegistry } from '../interpreters/registry'
+import {
+  getAllDevices, getDeviceById, insertDeviceWithUnits, deleteDevice,
+  replaceDeviceUnits, updateDeviceMeta,
+} from '../db/registry'
+import { validateDevicePayload } from '../interpreters/validate'
 
 export function registerRegistryRoutes(
   fastify: FastifyInstance,
   db: Database.Database,
-  registry: DynamicRegistry
+  registry: UnitRegistry,
 ): void {
   fastify.get('/api/registry', async (_req, reply) => {
     return reply.send({ devices: getAllDevices(db) })
   })
 
   fastify.post('/api/registry', async (req, reply) => {
-    const body = req.body as { name?: unknown; topic_patterns?: unknown; interpreter_type?: unknown }
-    const { name, topic_patterns, interpreter_type } = body
+    const res = validateDevicePayload(req.body)
+    if (!res.ok) return reply.status(400).send({ error: res.error })
 
-    if (
-      typeof name !== 'string' || !name ||
-      !Array.isArray(topic_patterns) || topic_patterns.length === 0 ||
-      typeof interpreter_type !== 'string' ||
-      !(VALID_TYPES as readonly string[]).includes(interpreter_type)
-    ) {
-      return reply.status(400).send({
-        error: 'name (string), topic_patterns (array non-vide) et interpreter_type valide requis',
-      })
-    }
-
-    const id = insertDevice(db, {
-      name,
-      topic_patterns: topic_patterns as string[],
-      interpreter_type,
+    const id = insertDeviceWithUnits(db, {
+      name: res.value.name,
+      debounce_ms: res.value.debounce_ms ?? null,
+      layout: res.value.layout ?? null,
+      units: res.value.units,
     })
-
-    const entry: DeviceEntry = {
-      id,
-      name,
-      topic_patterns: topic_patterns as string[],
-      interpreter_type: interpreter_type as DeviceEntry['interpreter_type'],
-      active: 1,
-      created_at: Date.now(),
-    }
-    registry.addDevice(entry)
+    const created = getDeviceById(db, id)
+    if (created) registry.addDevice(created)
 
     return reply.status(201).send({ id })
+  })
+
+  fastify.patch('/api/registry/:id', async (req, reply) => {
+    const id = parseInt((req.params as { id: string }).id, 10)
+    if (isNaN(id)) return reply.status(400).send({ error: 'id invalide' })
+
+    const existing = getDeviceById(db, id)
+    if (!existing) return reply.status(404).send({ error: 'Device introuvable' })
+
+    const res = validateDevicePayload(req.body)
+    if (!res.ok) return reply.status(400).send({ error: res.error })
+
+    updateDeviceMeta(db, id, {
+      name: res.value.name,
+      debounce_ms: res.value.debounce_ms ?? null,
+      layout: res.value.layout ?? null,
+    })
+    replaceDeviceUnits(db, id, res.value.units)
+
+    const updated = getDeviceById(db, id)
+    if (updated) registry.replaceDevice(updated)
+
+    return reply.send({ ok: true })
   })
 
   fastify.delete('/api/registry/:id', async (req, reply) => {
