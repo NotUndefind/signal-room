@@ -8,12 +8,13 @@ import { createRetentionJob } from './db/retention'
 import { createRedisStore } from './store/redis'
 import { createDedupStore } from './pipeline/dedup'
 import { createDebounce } from './pipeline/debounce'
-import { createDynamicRegistry } from './interpreters/dynamic'
-import { seedDeviceRegistry } from './db/registry'
+import { getAllDevices, migrateLegacyRegistry } from './db/registry'
+import { createUnitRegistry } from './interpreters/registry'
+import { createAggregator } from './interpreters/aggregator'
 import { upsertTopicSeen } from './db/topics'
 import { registerTopicsRoutes } from './api/topics-routes'
 import { registerRegistryRoutes } from './api/registry-routes'
-import type { DeviceState } from './interpreters/types'
+import { registerPresetsRoutes } from './api/presets-routes'
 import { createMqttClient } from './mqtt/client'
 import { createBroadcaster, registerWsRoutes } from './ws/server'
 import { registerDeviceRoutes } from './api/devices'
@@ -23,9 +24,11 @@ import { insertEvent, insertSnapshot } from './db/queries'
 async function main() {
   const db = createDb(config.db.path)
   applySchema(db)
+  migrateLegacyRegistry(db, config.tasmota.topicPrefix)
 
-  seedDeviceRegistry(db, config.tasmota.topicPrefix)
-  const deviceRegistry = createDynamicRegistry(db, config)
+  const devices = getAllDevices(db)
+  const unitRegistry = createUnitRegistry(devices)
+  const aggregator = createAggregator()
 
   const redisStore = createRedisStore(config.redis.url)
   const dedupStore = createDedupStore()
@@ -39,71 +42,62 @@ async function main() {
   registerDeviceRoutes(fastify, redisStore)
   registerHistoryRoutes(fastify, db)
   registerTopicsRoutes(fastify, db)
-  registerRegistryRoutes(fastify, db, deviceRegistry)
+  registerRegistryRoutes(fastify, db, unitRegistry)
+  registerPresetsRoutes(fastify)
 
   const retentionJob = createRetentionJob(db, config.retention.days)
   retentionJob.start()
 
-  function deviceKey(state: DeviceState): string {
-    const sub = String(state.state.camera ?? state.state.device_id ?? state.state.topic ?? '')
-    return sub ? `${state.source}:${sub}` : state.source
-  }
-
-  const debounceMap = new Map<string, ReturnType<typeof createDebounce>>()
-
-  function getDebounce(source: string): ReturnType<typeof createDebounce> | null {
-    const ms = deviceRegistry.getDebounceMs(source)
+  const debounceMap = new Map<number, ReturnType<typeof createDebounce>>()
+  function getDebounce(deviceId: number): ReturnType<typeof createDebounce> | null {
+    const ms = unitRegistry.getDebounceMs(deviceId)
     if (!ms) return null
-    if (!debounceMap.has(source)) {
-      debounceMap.set(source, createDebounce(ms))
-    }
-    return debounceMap.get(source)!
+    if (!debounceMap.has(deviceId)) debounceMap.set(deviceId, createDebounce(ms))
+    return debounceMap.get(deviceId)!
   }
 
-  function processState(topic: string, payload: Buffer) {
-    const state = deviceRegistry.route(topic, payload)
+  function processMessage(topic: string, payload: Buffer) {
+    const results = unitRegistry.route(topic, payload)
 
     setImmediate(() => {
       try {
-        upsertTopicSeen(db, topic, state?.source ?? null)
+        const firstSource = results[0] ? results[0].device_id.toString() : null
+        upsertTopicSeen(db, topic, firstSource)
       } catch (e) {
         console.error('[Catalogue] Upsert error:', e)
       }
     })
 
-    if (!state) return
+    for (const result of results) {
+      const state = aggregator.merge(result.device_id, result.partial_state, result.raw)
+      const key = state.source
+      const debounce = getDebounce(result.device_id)
 
-    const debounce = getDebounce(state.source)
+      const handle = () => {
+        if (!dedupStore.hasChanged(key, state)) {
+          console.log(`[Pipeline] Dedup — état inchangé pour: ${key}`)
+          return
+        }
+        dedupStore.update(key, state)
+        console.log(`[Pipeline] Broadcast — ${key} | event: ${state.event_type}`)
+        broadcaster.broadcast(key, state)
+        redisStore.setDeviceState(key, state).catch(console.error)
 
-    const handle = () => {
-      const key = deviceKey(state)
-      if (!dedupStore.hasChanged(key, state)) {
-        console.log(`[Pipeline] Dedup — état inchangé pour: ${key}`)
-        return
-      }
-      dedupStore.update(key, state)
-      console.log(`[Pipeline] Broadcast — source: ${key} | event: ${state.event_type}`)
-      broadcaster.broadcast(key, state)
-
-      redisStore.setDeviceState(key, state).catch(console.error)
-
-      setImmediate(() => {
-        insertEvent(db, {
-          source: state.source,
-          topic,
-          event_type: state.event_type,
-          payload: JSON.stringify(state.state),
-          raw: state.raw,
-          created_at: state.timestamp,
+        setImmediate(() => {
+          insertEvent(db, {
+            source: state.source,
+            topic,
+            event_type: state.event_type,
+            payload: JSON.stringify(state.state),
+            raw: state.raw,
+            created_at: state.timestamp,
+          })
+          insertSnapshot(db, state.source, JSON.stringify(state.state))
         })
-        insertSnapshot(db, state.source, JSON.stringify(state.state))
-      })
-    }
+      }
 
-    if (debounce) {
-      debounce(state.source, handle)
-    } else {
-      handle()
+      if (debounce) debounce(String(result.device_id), handle)
+      else handle()
     }
   }
 
@@ -113,7 +107,7 @@ async function main() {
     username: config.mqtt.username,
     password: config.mqtt.password,
     topics: ['#'],
-    onMessage: processState,
+    onMessage: processMessage,
   })
 
   await fastify.listen({ port: config.port, host: '0.0.0.0' })
