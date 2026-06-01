@@ -141,7 +141,11 @@ function DevicesContent() {
     if (!name.trim()) { setFormError('Nom requis'); return }
     if (units.length === 0) { setFormError('Au moins un unit requis'); return }
     try {
-      const payload = { name: name.trim(), units }
+      const normalizedUnits = units.map((u, i) => ({
+        ...u,
+        name: u.name || u.output_field || `unit_${i}`,
+      }))
+      const payload = { name: name.trim(), units: normalizedUnits }
       if (mode === 'edit' && editingId !== null) {
         await patchDevice(editingId, payload)
       } else {
@@ -150,8 +154,8 @@ function DevicesContent() {
       const updated = await fetchRegistry()
       setRegistry(updated)
       resetForm()
-    } catch {
-      setFormError("Erreur lors de l'enregistrement")
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Erreur lors de l'enregistrement")
     }
   }
 
@@ -307,7 +311,7 @@ function DevicesContent() {
             <div className="space-y-4">
               <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                 {units.map((unit, index) => (
-                  <Card key={unit.output_field || index}>
+                  <Card key={index}>
                     <CardContent className="pt-3 space-y-2">
                       <div className="space-y-1">
                         <label className="text-xs font-medium text-muted-foreground">topic_pattern</label>
