@@ -1,69 +1,144 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import Database from 'better-sqlite3'
+import BetterSqlite3 from 'better-sqlite3'
+import type Database from 'better-sqlite3'
 import { applySchema } from './schema'
-import { getAllDevices, insertDevice, deleteDevice, seedDeviceRegistry } from './registry'
+import {
+  getAllDevices, getDeviceById, insertDeviceWithUnits,
+  deleteDevice, replaceDeviceUnits, updateDeviceMeta, legacyRegistryRows,
+} from './registry'
+import type { UnitInput } from '../interpreters/types'
 
-function makeDb() {
-  const db = new Database(':memory:')
+function freshDb(): Database.Database {
+  const db = new BetterSqlite3(':memory:')
   applySchema(db)
   return db
 }
 
-describe('insertDevice / getAllDevices', () => {
-  it('insère et récupère un device avec topic_patterns parsé', () => {
-    const db = makeDb()
-    const id = insertDevice(db, {
-      name: 'Mon capteur',
-      topic_patterns: ['home/+/temp'],
-      interpreter_type: 'raw',
+const sampleUnit: UnitInput = {
+  position: 0,
+  name: 'Power',
+  topic_pattern: 'home/lamp/state',
+  json_path: 'POWER',
+  condition: null,
+  transform: { type: 'enum_map', map: { ON: true, OFF: false } },
+  output_field: 'power',
+  output_type: 'boolean',
+  display: { label: 'Allumé', icon: 'Plug' },
+}
+
+describe('insertDeviceWithUnits + getAllDevices', () => {
+  let db: Database.Database
+  beforeEach(() => { db = freshDb() })
+
+  it('insère un device avec ses units', () => {
+    const id = insertDeviceWithUnits(db, {
+      name: 'Lampe',
+      debounce_ms: null,
+      layout: null,
+      units: [sampleUnit],
     })
-    const devices = getAllDevices(db)
-    expect(devices).toHaveLength(1)
-    expect(devices[0].id).toBe(id)
-    expect(devices[0].name).toBe('Mon capteur')
-    expect(devices[0].topic_patterns).toEqual(['home/+/temp'])
-    expect(devices[0].interpreter_type).toBe('raw')
-    expect(devices[0].active).toBe(1)
+    const list = getAllDevices(db)
+    expect(list).toHaveLength(1)
+    expect(list[0].id).toBe(id)
+    expect(list[0].name).toBe('Lampe')
+    expect(list[0].units).toHaveLength(1)
+    expect(list[0].units[0].output_field).toBe('power')
+    expect(list[0].units[0].transform).toEqual({ type: 'enum_map', map: { ON: true, OFF: false } })
+  })
+
+  it('persiste condition, display, layout sérialisés', () => {
+    insertDeviceWithUnits(db, {
+      name: 'D',
+      debounce_ms: 300,
+      layout: { groups: [{ title: 'Etat', fields: ['power'] }] },
+      units: [{ ...sampleUnit, condition: { path: 'flag', op: 'eq', value: true } }],
+    })
+    const d = getAllDevices(db)[0]
+    expect(d.debounce_ms).toBe(300)
+    expect(d.layout).toEqual({ groups: [{ title: 'Etat', fields: ['power'] }] })
+    expect(d.units[0].condition).toEqual({ path: 'flag', op: 'eq', value: true })
+    expect(d.units[0].display).toEqual({ label: 'Allumé', icon: 'Plug' })
+  })
+
+  it('tri par position', () => {
+    insertDeviceWithUnits(db, {
+      name: 'D', debounce_ms: null, layout: null,
+      units: [
+        { ...sampleUnit, position: 2, output_field: 'a' },
+        { ...sampleUnit, position: 0, output_field: 'b' },
+        { ...sampleUnit, position: 1, output_field: 'c' },
+      ],
+    })
+    const d = getAllDevices(db)[0]
+    expect(d.units.map(u => u.output_field)).toEqual(['b', 'c', 'a'])
+  })
+})
+
+describe('getDeviceById', () => {
+  it('retourne null si inexistant', () => {
+    const db = freshDb()
+    expect(getDeviceById(db, 999)).toBeNull()
   })
 })
 
 describe('deleteDevice', () => {
-  it('supprime un device existant et retourne true', () => {
-    const db = makeDb()
-    const id = insertDevice(db, { name: 'X', topic_patterns: ['a/b'], interpreter_type: 'raw' })
+  it('supprime device et units en cascade', () => {
+    const db = freshDb()
+    const id = insertDeviceWithUnits(db, { name: 'D', debounce_ms: null, layout: null, units: [sampleUnit] })
     expect(deleteDevice(db, id)).toBe(true)
     expect(getAllDevices(db)).toHaveLength(0)
+    const remainingUnits = db.prepare('SELECT COUNT(*) as n FROM device_units').get() as { n: number }
+    expect(remainingUnits.n).toBe(0)
   })
 
-  it('retourne false pour un id inexistant', () => {
-    const db = makeDb()
-    expect(deleteDevice(db, 9999)).toBe(false)
+  it('retourne false si inconnu', () => {
+    const db = freshDb()
+    expect(deleteDevice(db, 999)).toBe(false)
   })
 })
 
-describe('seedDeviceRegistry', () => {
-  it('insère Frigate, Tasmota, WLED si la table est vide', () => {
-    const db = makeDb()
-    seedDeviceRegistry(db, '')
-    const devices = getAllDevices(db)
-    expect(devices).toHaveLength(3)
-    const names = devices.map(d => d.name)
-    expect(names).toContain('Frigate')
-    expect(names).toContain('Tasmota')
-    expect(names).toContain('WLED')
+describe('replaceDeviceUnits', () => {
+  it('remplace tous les units', () => {
+    const db = freshDb()
+    const id = insertDeviceWithUnits(db, { name: 'D', debounce_ms: null, layout: null, units: [sampleUnit] })
+    replaceDeviceUnits(db, id, [
+      { ...sampleUnit, output_field: 'replaced' },
+    ])
+    const d = getDeviceById(db, id)!
+    expect(d.units).toHaveLength(1)
+    expect(d.units[0].output_field).toBe('replaced')
+  })
+})
+
+describe('updateDeviceMeta', () => {
+  it('met à jour les champs présents seulement', () => {
+    const db = freshDb()
+    const id = insertDeviceWithUnits(db, { name: 'A', debounce_ms: null, layout: null, units: [sampleUnit] })
+    updateDeviceMeta(db, id, { name: 'B', debounce_ms: 500 })
+    const d = getDeviceById(db, id)!
+    expect(d.name).toBe('B')
+    expect(d.debounce_ms).toBe(500)
   })
 
-  it("n'insère pas si la table contient déjà des entrées", () => {
-    const db = makeDb()
-    insertDevice(db, { name: 'Existing', topic_patterns: ['x'], interpreter_type: 'raw' })
-    seedDeviceRegistry(db, '')
-    expect(getAllDevices(db)).toHaveLength(1)
+  it('peut désactiver un device', () => {
+    const db = freshDb()
+    const id = insertDeviceWithUnits(db, { name: 'A', debounce_ms: null, layout: null, units: [sampleUnit] })
+    updateDeviceMeta(db, id, { active: false })
+    expect(getDeviceById(db, id)!.active).toBe(false)
   })
+})
 
-  it('applique le préfixe Tasmota', () => {
-    const db = makeDb()
-    seedDeviceRegistry(db, 'home/')
-    const tasmota = getAllDevices(db).find(d => d.name === 'Tasmota')!
-    expect(tasmota.topic_patterns).toContain('home/tele/+/STATE')
+describe('legacyRegistryRows', () => {
+  it('retourne les rows sans units associés', () => {
+    const db = freshDb()
+    db.prepare(`
+      INSERT INTO device_registry (name, topic_patterns, interpreter_type, active, created_at)
+      VALUES (?, ?, ?, 1, ?)
+    `).run('LegacyFrigate', '["frigate/+/events"]', 'frigate', Date.now())
+    const id = insertDeviceWithUnits(db, { name: 'New', debounce_ms: null, layout: null, units: [sampleUnit] })
+    const legacy = legacyRegistryRows(db)
+    expect(legacy).toHaveLength(1)
+    expect(legacy[0].name).toBe('LegacyFrigate')
+    expect(legacy.some(r => r.id === id)).toBe(false)
   })
 })
