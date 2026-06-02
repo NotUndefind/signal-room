@@ -46,11 +46,13 @@ export interface DevicePayload {
 
 export interface Preset {
   key: string
+  id?: string
   name: string
   description: string
   debounce_ms: number | null
   placeholders: string[]
   units: UnitInput[]
+  source: 'builtin' | 'custom'
 }
 
 export interface TopicSeen {
@@ -113,6 +115,43 @@ export async function patchDevice(id: number, payload: DevicePayload): Promise<v
 
 export async function removeDevice(id: number): Promise<void> {
   const res = await fetch(`${API_URL}/api/registry/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+}
+
+export interface CustomPresetPayload {
+  name: string
+  description: string
+  units: UnitInput[]
+}
+
+export async function createCustomPreset(payload: CustomPresetPayload): Promise<string> {
+  const res = await fetch(`${API_URL}/api/presets/custom`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`)
+  }
+  const data = await res.json() as { id: string }
+  return data.id
+}
+
+export async function updateCustomPreset(id: string, payload: CustomPresetPayload): Promise<void> {
+  const res = await fetch(`${API_URL}/api/presets/custom/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`)
+  }
+}
+
+export async function deleteCustomPreset(id: string): Promise<void> {
+  const res = await fetch(`${API_URL}/api/presets/custom/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
 }
 
