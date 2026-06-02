@@ -15,6 +15,7 @@ import { upsertTopicSeen } from './db/topics'
 import { registerTopicsRoutes } from './api/topics-routes'
 import { registerRegistryRoutes } from './api/registry-routes'
 import { registerPresetsRoutes } from './api/presets-routes'
+import { registerCustomPresetsRoutes } from './api/custom-presets-routes'
 import { createMqttClient } from './mqtt/client'
 import { createBroadcaster, registerWsRoutes } from './ws/server'
 import { registerDeviceRoutes } from './api/devices'
@@ -34,7 +35,10 @@ async function main() {
   const broadcaster = createBroadcaster()
 
   const fastify = Fastify({ logger: true })
-  await fastify.register(cors, { origin: true })
+  await fastify.register(cors, {
+    origin: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  })
   await fastify.register(websocket)
 
   registerWsRoutes(fastify, broadcaster, redisStore)
@@ -42,7 +46,8 @@ async function main() {
   registerHistoryRoutes(fastify, db)
   registerTopicsRoutes(fastify, db)
   registerRegistryRoutes(fastify, db, unitRegistry)
-  registerPresetsRoutes(fastify)
+  registerPresetsRoutes(fastify, db)
+  registerCustomPresetsRoutes(fastify, db)
 
   const retentionJob = createRetentionJob(db, config.retention.days)
   retentionJob.start()
@@ -103,8 +108,6 @@ async function main() {
   createMqttClient({
     host: config.mqtt.host,
     port: config.mqtt.port,
-    username: config.mqtt.username,
-    password: config.mqtt.password,
     topics: ['#'],
     onMessage: processMessage,
   })

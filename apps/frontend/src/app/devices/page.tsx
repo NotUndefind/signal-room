@@ -10,8 +10,11 @@ import { TopicsTree } from '@/components/devices/TopicsTree'
 import {
   fetchRegistry, fetchTopicsSeen, fetchPresets,
   addDevice, patchDevice, removeDevice, applyPresetClient,
+  createCustomPreset, updateCustomPreset, deleteCustomPreset,
 } from '@/lib/registry-api'
 import type { RegistryDevice, TopicSeen, Preset, UnitInput } from '@/lib/registry-api'
+import { UnitEditor } from '@/components/devices/UnitEditor'
+import { SavePresetModal } from '@/components/devices/SavePresetModal'
 
 type FormMode = 'add' | 'edit'
 type FormStep = 'preset' | 'placeholders' | 'units'
@@ -30,6 +33,10 @@ function DevicesContent() {
   const [placeholderValues, setPlaceholderValues] = useState<Record<string, string>>({})
   const [units, setUnits] = useState<UnitInput[]>([])
   const [formError, setFormError] = useState<string | null>(null)
+  const [saveModalOpen, setSaveModalOpen] = useState(false)
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null)
+  const [presetDraft, setPresetDraft] = useState<{ name: string; description: string }>({ name: '', description: '' })
+  const [resetCount, setResetCount] = useState(0)
 
   const nameInputRef = useRef<HTMLInputElement>(null)
 
@@ -61,6 +68,9 @@ function DevicesContent() {
     setPlaceholderValues({})
     setUnits([])
     setFormError(null)
+    setEditingPresetId(null)
+    setPresetDraft({ name: '', description: '' })
+    setSaveModalOpen(false)
   }
 
   function handleSelectTopic(_topic: string) {
@@ -126,10 +136,11 @@ function DevicesContent() {
   function handleResetToPreset() {
     if (!selectedPreset) return
     setUnits(applyPresetClient(selectedPreset, placeholderValues))
+    setResetCount(c => c + 1)
   }
 
-  function handleUnitChange(index: number, field: 'topic_pattern' | 'output_field', value: string) {
-    setUnits(prev => prev.map((u, i) => i === index ? { ...u, [field]: value } : u))
+  function handleUnitReplace(index: number, next: UnitInput) {
+    setUnits(prev => prev.map((u, i) => i === index ? next : u))
   }
 
   function handleDeleteUnit(index: number) {
@@ -141,7 +152,11 @@ function DevicesContent() {
     if (!name.trim()) { setFormError('Nom requis'); return }
     if (units.length === 0) { setFormError('Au moins un unit requis'); return }
     try {
-      const payload = { name: name.trim(), units }
+      const normalizedUnits = units.map((u, i) => ({
+        ...u,
+        name: u.name || u.output_field || `unit_${i}`,
+      }))
+      const payload = { name: name.trim(), units: normalizedUnits }
       if (mode === 'edit' && editingId !== null) {
         await patchDevice(editingId, payload)
       } else {
@@ -150,8 +165,62 @@ function DevicesContent() {
       const updated = await fetchRegistry()
       setRegistry(updated)
       resetForm()
-    } catch {
-      setFormError("Erreur lors de l'enregistrement")
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Erreur lors de l'enregistrement")
+    }
+  }
+
+  function handleOpenSaveModal() {
+    if (!name.trim() && !presetDraft.name) {
+      setFormError('Renseignez d\'abord le nom du device ou ouvrez la modale après')
+      return
+    }
+    setFormError(null)
+    if (!editingPresetId) {
+      setPresetDraft({ name: name.trim() || 'Mon preset', description: '' })
+    }
+    setSaveModalOpen(true)
+  }
+
+  async function handleSavePreset(data: { name: string; description: string }) {
+    try {
+      if (editingPresetId) {
+        await updateCustomPreset(editingPresetId, { ...data, units })
+      } else {
+        await createCustomPreset({ ...data, units })
+      }
+      const refreshed = await fetchPresets()
+      setPresets(refreshed)
+      setSaveModalOpen(false)
+      setEditingPresetId(null)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Erreur lors de la sauvegarde du preset')
+    }
+  }
+
+  function handleEditCustomPreset(preset: Preset) {
+    if (preset.source !== 'custom' || !preset.id) return
+    setMode('add')
+    setEditingId(null)
+    setEditingPresetId(preset.id)
+    setSelectedPreset(preset)
+    setName('')
+    setUnits(applyPresetClient(preset, {}))
+    setPlaceholderValues({})
+    setPresetDraft({ name: preset.name, description: preset.description })
+    setStep('units')
+    setFormError(null)
+  }
+
+  async function handleDeleteCustomPreset(preset: Preset) {
+    if (preset.source !== 'custom' || !preset.id) return
+    if (!confirm(`Supprimer le preset "${preset.name}" ?`)) return
+    try {
+      await deleteCustomPreset(preset.id)
+      const refreshed = await fetchPresets()
+      setPresets(refreshed)
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Erreur lors de la suppression')
     }
   }
 
@@ -260,21 +329,48 @@ function DevicesContent() {
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm font-medium" htmlFor="preset-select">Preset</label>
-                <select
-                  id="preset-select"
-                  className="w-full border rounded px-3 py-2 text-sm bg-background"
-                  value={selectedPreset?.key ?? ''}
-                  onChange={e => setSelectedPreset(presets.find(p => p.key === e.target.value) ?? null)}
-                >
-                  <option value="">— Sélectionner un preset —</option>
-                  {presets.map(p => (
-                    <option key={p.key} value={p.key}>{p.name}</option>
-                  ))}
-                </select>
-                {selectedPreset && (
-                  <p className="text-xs text-muted-foreground">{selectedPreset.description}</p>
-                )}
+                <label className="text-sm font-medium">Preset</label>
+                <div className="border rounded max-h-72 overflow-y-auto divide-y">
+                  {presets.length === 0 && (
+                    <p className="text-xs text-muted-foreground p-2">Aucun preset disponible</p>
+                  )}
+                  {presets.map(p => {
+                    const isSelected = selectedPreset?.key === p.key
+                    return (
+                      <div
+                        key={p.key}
+                        className={`flex items-center justify-between p-2 text-sm cursor-pointer hover:bg-muted ${isSelected ? 'bg-muted' : ''}`}
+                        onClick={() => setSelectedPreset(p)}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate">{p.name}</span>
+                            {p.source === 'custom' && <Badge variant="secondary">Custom</Badge>}
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">{p.description}</p>
+                        </div>
+                        {p.source === 'custom' && (
+                          <div className="flex gap-1 shrink-0">
+                            <Button
+                              variant="ghost" size="icon" className="h-7 w-7"
+                              onClick={e => { e.stopPropagation(); handleEditCustomPreset(p) }}
+                              aria-label="Éditer le preset"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost" size="icon" className="h-7 w-7"
+                              onClick={e => { e.stopPropagation(); handleDeleteCustomPreset(p) }}
+                              aria-label="Supprimer le preset"
+                            >
+                              <Trash2 className="h-3 w-3 text-destructive" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
               {formError && <p className="text-sm text-destructive">{formError}</p>}
               <Button onClick={handlePresetNext} className="w-full">Suivant</Button>
@@ -307,53 +403,35 @@ function DevicesContent() {
             <div className="space-y-4">
               <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                 {units.map((unit, index) => (
-                  <Card key={unit.output_field || index}>
-                    <CardContent className="pt-3 space-y-2">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">topic_pattern</label>
-                        <input
-                          className="w-full border rounded px-2 py-1 text-xs font-mono bg-background"
-                          value={unit.topic_pattern}
-                          onChange={e => handleUnitChange(index, 'topic_pattern', e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-muted-foreground">output_field</label>
-                        <input
-                          className="w-full border rounded px-2 py-1 text-xs font-mono bg-background"
-                          value={unit.output_field}
-                          onChange={e => handleUnitChange(index, 'output_field', e.target.value)}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>transform: {(unit.transform as { type?: string }).type ?? '?'}</span>
-                        {unit.json_path && (
-                          <span className="font-mono truncate max-w-[120px]" title={unit.json_path}>{unit.json_path}</span>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => handleDeleteUnit(index)}
-                          aria-label="Supprimer l'unit"
-                        >
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <UnitEditor
+                    key={`${selectedPreset?.key ?? 'no-preset'}-${editingPresetId ?? 'new'}-${editingId ?? 'new'}-${resetCount}-${index}`}
+                    unit={unit}
+                    onChange={next => handleUnitReplace(index, next)}
+                    onDelete={() => handleDeleteUnit(index)}
+                  />
                 ))}
               </div>
               <Button variant="outline" onClick={handleAddUnit} className="w-full">Ajouter un unit</Button>
               {mode === 'add' && selectedPreset && (
                 <Button variant="outline" onClick={handleResetToPreset} className="w-full">Reset au preset</Button>
               )}
+              <Button variant="outline" onClick={handleOpenSaveModal} className="w-full">
+                {editingPresetId ? 'Mettre à jour le preset' : 'Sauvegarder comme preset'}
+              </Button>
               {formError && <p className="text-sm text-destructive">{formError}</p>}
-              <Button onClick={handleSave} className="w-full">Enregistrer</Button>
+              <Button onClick={handleSave} className="w-full">Enregistrer le device</Button>
             </div>
           )}
         </section>
       </div>
+      <SavePresetModal
+        open={saveModalOpen}
+        initialName={presetDraft.name}
+        initialDescription={presetDraft.description}
+        submitLabel={editingPresetId ? 'Mettre à jour' : 'Sauvegarder'}
+        onSave={handleSavePreset}
+        onClose={() => setSaveModalOpen(false)}
+      />
     </main>
   )
 }

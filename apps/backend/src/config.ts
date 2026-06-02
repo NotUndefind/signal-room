@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { config as loadDotEnv } from 'dotenv'
 
 export interface Config {
-  mqtt: { host: string; port: number; username: string; password?: string }
+  mqtt: { host: string; port: number }
   redis: { url: string }
   db: { path: string }
   retention: { days: number }
@@ -26,8 +26,6 @@ export function loadConfig(): Config {
     mqtt: {
       host: process.env.MQTT_HOST ?? 'localhost',
       port: parseInt(process.env.MQTT_PORT ?? '1883', 10),
-      username: process.env.MQTT_USER ?? 'mqtt_nlp',
-      password: process.env.MQTT_PASS || undefined,
     },
     redis: {
       url: process.env.REDIS_URL ?? 'redis://localhost:6379',
