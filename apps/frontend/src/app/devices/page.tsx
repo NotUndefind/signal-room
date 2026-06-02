@@ -36,6 +36,7 @@ function DevicesContent() {
   const [saveModalOpen, setSaveModalOpen] = useState(false)
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null)
   const [presetDraft, setPresetDraft] = useState<{ name: string; description: string }>({ name: '', description: '' })
+  const [resetCount, setResetCount] = useState(0)
 
   const nameInputRef = useRef<HTMLInputElement>(null)
 
@@ -132,6 +133,7 @@ function DevicesContent() {
   function handleResetToPreset() {
     if (!selectedPreset) return
     setUnits(applyPresetClient(selectedPreset, placeholderValues))
+    setResetCount(c => c + 1)
   }
 
   function handleUnitReplace(index: number, next: UnitInput) {
@@ -171,8 +173,9 @@ function DevicesContent() {
       return
     }
     setFormError(null)
-    setEditingPresetId(null)
-    setPresetDraft({ name: name.trim() || 'Mon preset', description: '' })
+    if (!editingPresetId) {
+      setPresetDraft({ name: name.trim() || 'Mon preset', description: '' })
+    }
     setSaveModalOpen(true)
   }
 
@@ -398,7 +401,7 @@ function DevicesContent() {
               <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
                 {units.map((unit, index) => (
                   <UnitEditor
-                    key={`${selectedPreset?.key ?? 'no-preset'}-${editingPresetId ?? 'new'}-${editingId ?? 'new'}-${index}`}
+                    key={`${selectedPreset?.key ?? 'no-preset'}-${editingPresetId ?? 'new'}-${editingId ?? 'new'}-${resetCount}-${index}`}
                     unit={unit}
                     onChange={next => handleUnitReplace(index, next)}
                     onDelete={() => handleDeleteUnit(index)}
