@@ -65,6 +65,19 @@ export function applySchema(db: Database.Database): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_units_device ON device_units (device_id);
+
+    CREATE TABLE IF NOT EXISTS custom_presets (
+      id          TEXT    PRIMARY KEY,
+      name        TEXT    NOT NULL,
+      description TEXT    NOT NULL DEFAULT '',
+      debounce_ms INTEGER,
+      layout_json TEXT,
+      units_json  TEXT    NOT NULL,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_custom_presets_created_at ON custom_presets (created_at);
   `)
 
   if (!hasColumn(db, 'device_registry', 'debounce_ms')) {
