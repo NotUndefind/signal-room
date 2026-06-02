@@ -91,7 +91,10 @@ export async function addDevice(payload: DevicePayload): Promise<number> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`)
+  }
   const data = await res.json() as { id: number }
   return data.id
 }
@@ -102,7 +105,10 @@ export async function patchDevice(id: number, payload: DevicePayload): Promise<v
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`)
+  }
 }
 
 export async function removeDevice(id: number): Promise<void> {

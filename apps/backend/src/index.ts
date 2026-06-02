@@ -34,7 +34,10 @@ async function main() {
   const broadcaster = createBroadcaster()
 
   const fastify = Fastify({ logger: true })
-  await fastify.register(cors, { origin: true })
+  await fastify.register(cors, {
+    origin: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  })
   await fastify.register(websocket)
 
   registerWsRoutes(fastify, broadcaster, redisStore)
@@ -103,8 +106,6 @@ async function main() {
   createMqttClient({
     host: config.mqtt.host,
     port: config.mqtt.port,
-    username: config.mqtt.username,
-    password: config.mqtt.password,
     topics: ['#'],
     onMessage: processMessage,
   })
