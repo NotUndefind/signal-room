@@ -68,6 +68,9 @@ function DevicesContent() {
     setPlaceholderValues({})
     setUnits([])
     setFormError(null)
+    setEditingPresetId(null)
+    setPresetDraft({ name: '', description: '' })
+    setSaveModalOpen(false)
   }
 
   function handleSelectTopic(_topic: string) {
