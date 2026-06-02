@@ -15,6 +15,7 @@ import { upsertTopicSeen } from './db/topics'
 import { registerTopicsRoutes } from './api/topics-routes'
 import { registerRegistryRoutes } from './api/registry-routes'
 import { registerPresetsRoutes } from './api/presets-routes'
+import { registerCustomPresetsRoutes } from './api/custom-presets-routes'
 import { createMqttClient } from './mqtt/client'
 import { createBroadcaster, registerWsRoutes } from './ws/server'
 import { registerDeviceRoutes } from './api/devices'
@@ -45,7 +46,8 @@ async function main() {
   registerHistoryRoutes(fastify, db)
   registerTopicsRoutes(fastify, db)
   registerRegistryRoutes(fastify, db, unitRegistry)
-  registerPresetsRoutes(fastify)
+  registerPresetsRoutes(fastify, db)
+  registerCustomPresetsRoutes(fastify, db)
 
   const retentionJob = createRetentionJob(db, config.retention.days)
   retentionJob.start()
